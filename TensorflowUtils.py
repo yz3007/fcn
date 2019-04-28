@@ -207,7 +207,7 @@ def bottleneck_unit(x, out_chan1, out_chan2, down_stride=False, up_stride=False,
 def add_to_regularization_and_summary(var):
     if var is not None:
         tf.summary.histogram(var.op.name, var)
-        tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
+        #tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
 
 
 def add_activation_summary(var):

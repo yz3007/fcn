@@ -56,7 +56,8 @@ class BatchDatset:
     def _transform(self, filename):
         image = misc.imread(filename)
         if self.__channels and len(image.shape) < 3:  # make sure images are of shape(h,w,3)
-            image = np.array([image for i in range(3)])  # -------------(3,h,w)
+            image = np.array(
+                [image for i in range(3)])  # -------------(3,h,w) it is correct. below misc.imresize makes it (h,w,3)
 
         if self.image_options.get("resize", False) and self.image_options["resize"]:
             resize_size = int(self.image_options["resize_size"])

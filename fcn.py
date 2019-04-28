@@ -13,6 +13,7 @@ import TensorflowUtils as utils
 import read_MITSceneParsingData as scene_parsing
 import datetime
 import BatchDatasetReader as dataset
+import os
 from six.moves import xrange
 
 FLAGS = tf.flags.FLAGS
@@ -20,25 +21,25 @@ FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer('batch_size', '2', 'batch size for training/testing')
 tf.flags.DEFINE_string('logs_dir', 'logs/', 'path to logs directory')
 tf.flags.DEFINE_string('data_dir', 'Data_zoo/MIT_SceneParsing/', 'path to dataset')
-tf.flags.DEFINE_string('data_name', 'ADEchallengeData2016', 'data name')
-tf.flags.DEFINE_float('learning_rate', '1e-4', 'initial learning rate for Adam Optimizer')
-tf.flags.DEFINE_string('model_path', 'FLAGS.model_zoo/imagenet-vgg-verydeep-19.mat', 'path to vgg FLAGS.model mat')
-tf.flags.DEFINE_bool('debug', 'False', 'FLAGS.debug FLAGS.mode: True/False')
-tf.flags.DEFINE_string('mode', 'train', 'FLAGS.mode train/visualize')
+tf.flags.DEFINE_string('data_name', 'ADEChallengeData2016', 'data name')
+tf.flags.DEFINE_float('learning_rate', '1e-5', 'initial learning rate for Adam Optimizer')
+tf.flags.DEFINE_string('model_path', 'Model_zoo/imagenet-vgg-verydeep-19.mat', 'path to vgg FLAGS.model mat')
+tf.flags.DEFINE_bool('debug', 'False', 'debug mode: True/False')
+tf.flags.DEFINE_string('mode', 'train', 'mode train/visualize')
 # batch_size = 1  # batch 大小
 # logs_dir = "logs/"
 # data_dir = "Data_zoo/MIT_SceneParsing/"  # 存放数据集的路径，需要提前下载
 # data_name = "ADEChallengeData2016"
 # learning_rate = 1e-5  # 学习率
-# model_path = "FLAGS.model_zoo/imagenet-vgg-verydeep-19.mat"  # VGG网络参数文件，需要提前下载
+# model_path = "Model_zoo/imagenet-vgg-verydeep-19.mat"  # VGG网络参数文件，需要提前下载
 # debug = False
 # mode = 'visualize'  # 训练模式train | visualize
 #
 # modeL_URL = 'http://www.vlfeat.org/matconvnet/FLAGS.models/beta16/imagenet-vgg-verydeep-19.mat'  # 训练好的VGGNet参数
 #
 MAX_ITERATION = int(1e5 + 1)  # 最大迭代次数
-NUM_OF_CLASSESS = 151  # 类的个数
-IMAGE_SIZE = None  # 图像尺寸
+NUM_OF_CLASSESS = 3  # 类的个数
+IMAGE_SIZE = 224  # 图像尺寸
 
 
 # 根据载入的权重建立原始的 VGGNet 的网络
@@ -72,11 +73,11 @@ def vgg_net(weights, image):
             bias = utils.get_variable(bias.reshape(-1), name=name + '_b')
             current = utils.conv2d_basic(current, kernels, bias)
 
-            print('current shape: ', np.shape(current))  # ?????????????????????????????????????
+            print('current shape: ', np.shape(current))
 
         elif kind == 'relu':
             current = tf.nn.relu(current, name=name)
-            if FLAGS.debug:  # ????????????????????????????????????????FLAGS.debug
+            if FLAGS.debug:
                 utils.add_activation_summary(current)
         elif kind == 'pool':
             current = utils.avg_pool_2x2(current)
@@ -98,12 +99,14 @@ def inference(image, keep_prob):
     # loading FLAGS.model 
     print('original image', np.shape(image))
 
-    FLAGS.model_data = utils.get_FLAGS.model_data(FLAGS.FLAGS.model_path)
+    model_data = utils.get_model_data(FLAGS.model_path)
 
-    mean = FLAGS.model_data['normalization'][0][0][0]
-    mean_pixel = np.mean(mean, axis=(0, 1))  # ?????????    array([123.68 , 116.779, 103.939])
+    # mean = model_data['normalization'][0][0][0]
+    # mean_pixel = np.mean(mean, axis=(0, 1))  # array([123.68 , 116.779, 103.939])
 
-    weights = np.squeeze(FLAGS.model_data['layers'])
+    mean_pixel = np.array([134.69] * 3)
+
+    weights = np.squeeze(model_data['layers'])
 
     # image preprocessing
     processed_image = utils.process_image(image, mean_pixel)
@@ -115,7 +118,7 @@ def inference(image, keep_prob):
         image_net = vgg_net(weights, processed_image)
 
         # 在VGGNet-19之后添加 一个池化层和三个卷积层    
-        conv_final_layer = image_net['conv5_3']  # ??????????????????????????????????conv5_3???
+        conv_final_layer = image_net['conv5_3']
         print("VGG处理后的图像：", np.shape(conv_final_layer))
 
         pool5 = utils.max_pool_2x2(conv_final_layer)  # batch x 7 x7 x 512
@@ -128,7 +131,7 @@ def inference(image, keep_prob):
         relu6 = tf.nn.relu(conv6, name='relu6')
 
         if FLAGS.debug:
-            utils.add_activation(relu6)
+            utils.add_activation_summary(relu6)
 
         relu_dropout6 = tf.nn.dropout(relu6, keep_prob=keep_prob)
 
@@ -207,15 +210,19 @@ def main(argv=None):
     # 定义好FCN的网络模型
     pred_annotation, logits = inference(image, keep_probability)
 
+    labels = tf.squeeze(annotation,
+                        squeeze_dims=[3])
+
     # 定义损失函数，这里使用交叉熵的平均值作为损失函数
     loss = tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                                          labels=tf.squeeze(annotation,
-                                                                                            squeeze_dims=[3]),
+                                                                          labels=labels,
                                                                           name="entropy")))
 
     loss_summary = tf.summary.scalar("entropy", loss)
     # 定义优化器 
     trainable_var = tf.trainable_variables()
+    # for _ in trainable_var:
+    #     print(_)
 
     if FLAGS.debug:
         for var in trainable_var:
@@ -232,7 +239,7 @@ def main(argv=None):
 
     print("Setting up dataset reader")
 
-    image_options = {'resize': False, 'resize_size': IMAGE_SIZE}
+    image_options = {'resize': True, 'resize_size': IMAGE_SIZE}
     if FLAGS.mode == 'train':
         train_dataset_reader = dataset.BatchDatset(train_records, image_options)
     validation_dataset_reader = dataset.BatchDatset(valid_records, image_options)
@@ -252,25 +259,46 @@ def main(argv=None):
 
     sess.run(tf.global_variables_initializer())
     ckpt = tf.train.get_checkpoint_state(FLAGS.logs_dir)
-    if ckpt and ckpt.FLAGS.model_checkpoint_path:
-        saver.restore(sess, ckpt.FLAGS.model_checkpoint_path)
+    if ckpt and ckpt.model_checkpoint_path:
+        saver.restore(sess, ckpt.model_checkpoint_path)
         print("FLAGS.model restored...")
 
+    start = 0
+    if ckpt:
+        start = ckpt.model_checkpoint_path.split('-')[-1]
+        start = int(start) + 1
+
+    # best valid
+    best = 1e8
+
     if FLAGS.mode == "train":
-        for itr in xrange(MAX_ITERATION):
+        for itr in range(start, MAX_ITERATION):
             train_images, train_annotations = train_dataset_reader.next_batch(FLAGS.batch_size)
             print(np.shape(train_images), np.shape(train_annotations))
             feed_dict = {image: train_images, annotation: train_annotations, keep_probability: 0.85}
 
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # lo, ls, anno, lab = sess.run([loss, logits, pred_annotation, labels], feed_dict=feed_dict)
+            # nan = np.sum(np.isnan(ls))
+            # print('nan #', nan)
+            # print('labels:', lab, 'unique', np.unique(lab))
+            # print('ls', ls)
+            # print('shape', ls.shape)
+            # print('pred_annotation', anno)
+            # print('loss', lo)
+            # print('*' * 30)
             sess.run(train_op, feed_dict=feed_dict)
             print("step:", itr)
 
             if itr % 10 == 0:
-                train_loss, summary_str = sess.run([loss, loss_summary], feed_dict=feed_dict)
+                if FLAGS.debug:
+                    train_loss, summary_str = sess.run([loss, summary_merge], feed_dict=feed_dict)
+                else:
+                    train_loss, summary_str = sess.run([loss, loss_summary], feed_dict=feed_dict)
                 print("Step: %d, Train_loss:%g" % (itr, train_loss))
                 train_writer.add_summary(summary_str, itr)
 
-            if itr % 500 == 0:
+            if itr % 100 == 0:
                 valid_images, valid_annotations = validation_dataset_reader.next_batch(FLAGS.batch_size)
                 valid_loss, summary_sva = sess.run([loss, loss_summary],
                                                    feed_dict={image: valid_images, annotation: valid_annotations,
@@ -280,16 +308,20 @@ def main(argv=None):
                 # add validation loss to TensorBoard
                 validation_writer.add_summary(summary_sva, itr)
 
-                saver.save(sess, FLAGS.logs_dir + "FLAGS.model.ckpt", itr)
+                saver.save(sess, FLAGS.logs_dir + "model.ckpt", itr)
 
+                if valid_loss < best:
+                    best = valid_loss
+                    os.system('rm -f ./logs/best/*')
+                    saver.save(sess, FLAGS.logs_dir + "best/" + "model.ckpt", itr)
     elif FLAGS.mode == "visualize":
         valid_images, valid_annotations = validation_dataset_reader.get_random_batch(FLAGS.batch_size)
 
         # testing for any size
-        valid_images = np.expand_dims(valid_images[0], axis=0)
-        valid_annotations = np.expand_dims(valid_annotations[0], axis=0)
-        print(valid_images.shape)
-        print(valid_annotations.shape)
+        # valid_images = np.expand_dims(valid_images[0], axis=0)
+        # valid_annotations = np.expand_dims(valid_annotations[0], axis=0)
+        # print(valid_images.shape)
+        # print(valid_annotations.shape)
         pred = sess.run(pred_annotation, feed_dict={image: valid_images, annotation: valid_annotations,
                                                     keep_probability: 1.0})
         valid_annotations = np.squeeze(valid_annotations, axis=3)
