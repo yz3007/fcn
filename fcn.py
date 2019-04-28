@@ -26,6 +26,14 @@ tf.flags.DEFINE_float('learning_rate', '1e-5', 'initial learning rate for Adam O
 tf.flags.DEFINE_string('model_path', 'Model_zoo/imagenet-vgg-verydeep-19.mat', 'path to vgg FLAGS.model mat')
 tf.flags.DEFINE_bool('debug', 'False', 'debug mode: True/False')
 tf.flags.DEFINE_string('mode', 'train', 'mode train/visualize')
+tf.flags.DEFINE_float('weight_decay', '1e-3', 'L2 regularization, decay=0.0 means no L2')
+
+tf.flags.DEFINE_integer('MAX_ITERATION', 'int(1e5+1)', 'upper limit of iterations')
+tf.flags.DEFINE_integer('NUM_OF_CLASSES', '3', 'number of classes detected including background = # of real class + 1')
+tf.flags.DEFINE_integer('IMAGE_SIZE', '224',
+                        'image size for height and weight at the same time. Suggested size is 32 times, 224/32 = 7')
+
+
 # batch_size = 1  # batch 大小
 # logs_dir = "logs/"
 # data_dir = "Data_zoo/MIT_SceneParsing/"  # 存放数据集的路径，需要提前下载
@@ -37,9 +45,9 @@ tf.flags.DEFINE_string('mode', 'train', 'mode train/visualize')
 #
 # modeL_URL = 'http://www.vlfeat.org/matconvnet/FLAGS.models/beta16/imagenet-vgg-verydeep-19.mat'  # 训练好的VGGNet参数
 #
-MAX_ITERATION = int(1e5 + 1)  # 最大迭代次数
-NUM_OF_CLASSESS = 3  # 类的个数
-IMAGE_SIZE = 224  # 图像尺寸
+# MAX_ITERATION = int(1e5 + 1)  # 最大迭代次数
+# NUM_OF_CLASSES = 3  # 类的个数
+# IMAGE_SIZE = 224  # 图像尺寸
 
 
 # 根据载入的权重建立原始的 VGGNet 的网络
@@ -71,10 +79,9 @@ def vgg_net(weights, image):
 
             kernels = utils.get_variable(np.transpose(kernels, [1, 0, 2, 3]), name=name + '_w')
             bias = utils.get_variable(bias.reshape(-1), name=name + '_b')
-            current = utils.conv2d_basic(current, kernels, bias)
+            current = utils.conv2d_basic(current, kernels, bias, FLAGS.weight_decay)
 
             print('current shape: ', np.shape(current))
-
         elif kind == 'relu':
             current = tf.nn.relu(current, name=name)
             if FLAGS.debug:
@@ -127,7 +134,7 @@ def inference(image, keep_prob):
 
         W6 = utils.weight_variable([7, 7, 512, 4096], name="W6")
         b6 = utils.bias_variable([4096], name='b6')
-        conv6 = utils.conv2d_basic(pool5, W6, b6)
+        conv6 = utils.conv2d_basic(pool5, W6, b6, FLAGS.weight_decay)
         relu6 = tf.nn.relu(conv6, name='relu6')
 
         if FLAGS.debug:
@@ -139,7 +146,7 @@ def inference(image, keep_prob):
 
         W7 = utils.weight_variable([1, 1, 4096, 4096], name="W7")
         b7 = utils.bias_variable([4096], name="b7")
-        conv7 = utils.conv2d_basic(relu_dropout6, W7, b7)
+        conv7 = utils.conv2d_basic(relu_dropout6, W7, b7, FLAGS.weight_decay)
         relu7 = tf.nn.relu(conv7, name="relu7")
         if FLAGS.debug:
             utils.add_activation_summary(relu7)
@@ -147,9 +154,9 @@ def inference(image, keep_prob):
 
         print("conv7:", np.shape(relu_dropout7))
 
-        W8 = utils.weight_variable([1, 1, 4096, NUM_OF_CLASSESS], name="W8")
-        b8 = utils.bias_variable([NUM_OF_CLASSESS], name="b8")
-        conv8 = utils.conv2d_basic(relu_dropout7, W8, b8)
+        W8 = utils.weight_variable([1, 1, 4096, FLAGS.NUM_OF_CLASSES], name="W8")
+        b8 = utils.bias_variable([FLAGS.NUM_OF_CLASSES], name="b8")
+        conv8 = utils.conv2d_basic(relu_dropout7, W8, b8, FLAGS.weight_decay)
 
         print("conv8:", np.shape(conv8))  # batch x 7 x 7 x 151
         # annotation_pred1 = tf.argmax(conv8, dimension=3, name="prediction1")
@@ -157,7 +164,7 @@ def inference(image, keep_prob):
         # 对卷积后的结果进行反卷积操作
 
         deconv_shape1 = image_net["pool4"].get_shape()  # 14x14x512
-        W_t1 = utils.weight_variable([4, 4, deconv_shape1[3].value, NUM_OF_CLASSESS], name="W_t1")
+        W_t1 = utils.weight_variable([4, 4, deconv_shape1[3].value, FLAGS.NUM_OF_CLASSES], name="W_t1")
         b_t1 = utils.bias_variable([deconv_shape1[3].value], name="b_t1")
         conv_t1 = utils.conv2d_transpose_strided(conv8, W_t1, b_t1,
                                                  output_shape=tf.shape(image_net["pool4"]))  # 14x14x512
@@ -176,12 +183,13 @@ def inference(image, keep_prob):
         print("pool3 and deconv_fuse1 ==> fuse2:", np.shape(fuse_2))  # (28, 28, 256)
 
         shape = tf.shape(image)  # 1x224x224x3
-        deconv_shape3 = tf.stack([shape[0], shape[1], shape[2], NUM_OF_CLASSESS])  # 224x224X3X151
-        W_t3 = utils.weight_variable([16, 16, NUM_OF_CLASSESS, deconv_shape2[3].value], name="W_t3")  # [16,16,151,256]
-        b_t3 = utils.bias_variable([NUM_OF_CLASSESS], name="b_t3")
+        deconv_shape3 = tf.stack([shape[0], shape[1], shape[2], FLAGS.NUM_OF_CLASSES])  # 224x224X3X151
+        W_t3 = utils.weight_variable([16, 16, FLAGS.NUM_OF_CLASSES, deconv_shape2[3].value],
+                                     name="W_t3")  # [16,16,151,256]
+        b_t3 = utils.bias_variable([FLAGS.NUM_OF_CLASSES], name="b_t3")
         conv_t3 = utils.conv2d_transpose_strided(fuse_2, W_t3, b_t3, output_shape=deconv_shape3, stride=8)
 
-        print("conv_t3:", [np.shape(image)[1], np.shape(image)[2], NUM_OF_CLASSESS])  # (224,224,151)
+        print("conv_t3:", [np.shape(image)[1], np.shape(image)[2], FLAGS.NUM_OF_CLASSES])  # (224,224,151)
 
         annotation_pred = tf.argmax(conv_t3, dimension=3, name="prediction")  # (224,224,1)
 
@@ -202,8 +210,8 @@ def train(loss_val, var_list):
 # 主函数,返回优化器的操作步骤http://www.vlfeat.org/matconvnet/FLAGS.models/beta16/imagenet-vgg-verydeep-19.mat
 def main(argv=None):
     keep_probability = tf.placeholder(tf.float32, name="keep_probabilty")
-    image = tf.placeholder(tf.float32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 3], name="input_image")
-    annotation = tf.placeholder(tf.int32, shape=[None, IMAGE_SIZE, IMAGE_SIZE, 1], name="annotation")
+    image = tf.placeholder(tf.float32, shape=[None, FLAGS.IMAGE_SIZE, FLAGS.IMAGE_SIZE, 3], name="input_image")
+    annotation = tf.placeholder(tf.int32, shape=[None, FLAGS.IMAGE_SIZE, FLAGS.IMAGE_SIZE, 1], name="annotation")
 
     print("setting up vgg initialized conv layers ...")
 
@@ -214,11 +222,15 @@ def main(argv=None):
                         squeeze_dims=[3])
 
     # 定义损失函数，这里使用交叉熵的平均值作为损失函数
-    loss = tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
-                                                                          labels=labels,
-                                                                          name="entropy")))
+    model_loss = tf.reduce_mean((tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits,
+                                                                                labels=labels,
+                                                                                name="entropy")))
+    model_loss_summary = tf.summary.scalar("model entropy", model_loss)
 
-    loss_summary = tf.summary.scalar("entropy", loss)
+    tf.add_to_collection('losses', model_loss)
+    loss = tf.add_n(tf.get_collection('losses'))  # including L2 losses
+
+    loss_summary = tf.summary.scalar("total entropy", loss)
     # 定义优化器 
     trainable_var = tf.trainable_variables()
     # for _ in trainable_var:
@@ -239,7 +251,7 @@ def main(argv=None):
 
     print("Setting up dataset reader")
 
-    image_options = {'resize': True, 'resize_size': IMAGE_SIZE}
+    image_options = {'resize': True, 'resize_size': FLAGS.IMAGE_SIZE}
     if FLAGS.mode == 'train':
         train_dataset_reader = dataset.BatchDatset(train_records, image_options)
     validation_dataset_reader = dataset.BatchDatset(valid_records, image_options)
@@ -261,7 +273,7 @@ def main(argv=None):
     ckpt = tf.train.get_checkpoint_state(FLAGS.logs_dir)
     if ckpt and ckpt.model_checkpoint_path:
         saver.restore(sess, ckpt.model_checkpoint_path)
-        print("FLAGS.model restored...")
+        print('model ' + ckpt.model_checkpoint_path.split('-')[-1] + ' restored...')
 
     start = 0
     if ckpt:
@@ -269,10 +281,10 @@ def main(argv=None):
         start = int(start) + 1
 
     # best valid
-    best = 1e8
+    best = 1e8  # set as infi
 
     if FLAGS.mode == "train":
-        for itr in range(start, MAX_ITERATION):
+        for itr in range(start, FLAGS.MAX_ITERATION):
             train_images, train_annotations = train_dataset_reader.next_batch(FLAGS.batch_size)
             print(np.shape(train_images), np.shape(train_annotations))
             feed_dict = {image: train_images, annotation: train_annotations, keep_probability: 0.85}
@@ -299,8 +311,8 @@ def main(argv=None):
                 train_writer.add_summary(summary_str, itr)
 
             if itr % 100 == 0:
-                valid_images, valid_annotations = validation_dataset_reader.next_batch(FLAGS.batch_size)
-                valid_loss, summary_sva = sess.run([loss, loss_summary],
+                valid_images, valid_annotations = validation_dataset_reader.next_batch(14)#FLAGS.batch_size)
+                valid_loss, summary_sva = sess.run([model_loss, model_loss_summary],
                                                    feed_dict={image: valid_images, annotation: valid_annotations,
                                                               keep_probability: 1.0})
                 print("%s ---> Validation_loss: %g" % (datetime.datetime.now(), valid_loss))
@@ -312,7 +324,7 @@ def main(argv=None):
 
                 if valid_loss < best:
                     best = valid_loss
-                    os.system('rm -f ./logs/best/*')
+                    # os.system('rm -f ./logs/best/*')
                     saver.save(sess, FLAGS.logs_dir + "best/" + "model.ckpt", itr)
     elif FLAGS.mode == "visualize":
         valid_images, valid_annotations = validation_dataset_reader.get_random_batch(FLAGS.batch_size)

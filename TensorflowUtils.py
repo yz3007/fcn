@@ -59,8 +59,10 @@ def get_tensor_size(tensor):
     return reduce(mul, (d.value for d in tensor.get_shape()), 1)  # set init =1 for scalar tensor
 
 
-def conv2d_basic(x, W, bias):
+def conv2d_basic(x, W, bias, decay=None):
     conv = tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
+    if decay:
+        tf.add_to_collection('losses', tf.contrib.layers.l2_regularizer(decay)(W))
     return tf.nn.bias_add(conv, bias)
 
 
@@ -69,7 +71,7 @@ def conv2d_strided(x, W, b):
     return tf.nn.bias_add(conv, b)
 
 
-def conv2d_transpose_strided(x, W, b, output_shape=None, stride=2):  # ????????????????????????????
+def conv2d_transpose_strided(x, W, b, output_shape=None, stride=2, decay=None):  # ????????????????????????????
     # print x.get_shape()
     # print W.get_shape()
     if output_shape is None:
@@ -80,6 +82,10 @@ def conv2d_transpose_strided(x, W, b, output_shape=None, stride=2):  # ?????????
 
     # print output_shape
     conv = tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1])
+
+    if decay:
+        tf.add_to_collection('losses', tf.contrib.layers.l2_regularizer(decay)(W))
+
     return tf.nn.bias_add(conv, b)
 
 
@@ -207,7 +213,7 @@ def bottleneck_unit(x, out_chan1, out_chan2, down_stride=False, up_stride=False,
 def add_to_regularization_and_summary(var):
     if var is not None:
         tf.summary.histogram(var.op.name, var)
-        #tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
+        # tf.add_to_collection("reg_loss", tf.nn.l2_loss(var))
 
 
 def add_activation_summary(var):
