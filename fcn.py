@@ -13,6 +13,7 @@ import TensorflowUtils as utils
 import read_MITSceneParsingData as scene_parsing
 import datetime
 import BatchDatasetReader as dataset
+import cv2
 import os
 from six.moves import xrange
 
@@ -28,7 +29,7 @@ tf.flags.DEFINE_bool('debug', 'False', 'debug mode: True/False')
 tf.flags.DEFINE_string('mode', 'train', 'mode train/visualize')
 tf.flags.DEFINE_float('weight_decay', '1e-3', 'L2 regularization, decay=0.0 means no L2')
 
-tf.flags.DEFINE_integer('MAX_ITERATION', 'int(1e5+1)', 'upper limit of iterations')
+tf.flags.DEFINE_integer('MAX_ITERATION', '100001', 'upper limit of iterations')
 tf.flags.DEFINE_integer('NUM_OF_CLASSES', '3', 'number of classes detected including background = # of real class + 1')
 tf.flags.DEFINE_integer('IMAGE_SIZE', '224',
                         'image size for height and weight at the same time. Suggested size is 32 times, 224/32 = 7')
@@ -311,7 +312,7 @@ def main(argv=None):
                 train_writer.add_summary(summary_str, itr)
 
             if itr % 100 == 0:
-                valid_images, valid_annotations = validation_dataset_reader.next_batch(14)#FLAGS.batch_size)
+                valid_images, valid_annotations = validation_dataset_reader.next_batch(14)  # FLAGS.batch_size)
                 valid_loss, summary_sva = sess.run([model_loss, model_loss_summary],
                                                    feed_dict={image: valid_images, annotation: valid_annotations,
                                                               keep_probability: 1.0})
@@ -320,7 +321,7 @@ def main(argv=None):
                 # add validation loss to TensorBoard
                 validation_writer.add_summary(summary_sva, itr)
 
-                saver.save(sess, FLAGS.logs_dir + "model.ckpt", itr)
+                # saver.save(sess, FLAGS.logs_dir + "model.ckpt", itr)
 
                 if valid_loss < best:
                     best = valid_loss
@@ -338,11 +339,16 @@ def main(argv=None):
                                                     keep_probability: 1.0})
         valid_annotations = np.squeeze(valid_annotations, axis=3)
         pred = np.squeeze(pred, axis=3)
-
         for itr in range(FLAGS.batch_size):
-            utils.save_image(valid_images[itr].astype(np.uint8), FLAGS.logs_dir, name="inp_" + str(5 + itr))
-            utils.save_image(valid_annotations[itr].astype(np.uint8), FLAGS.logs_dir, name="gt_" + str(5 + itr))
-            utils.save_image(pred[itr].astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5 + itr))
+            # utils.save_image(valid_images[itr].astype(np.uint8), FLAGS.logs_dir, name="inp_" + str(5 + itr))
+            # utils.save_image(valid_annotations[itr].astype(np.uint8), FLAGS.logs_dir, name="gt_" + str(5 + itr))
+            # utils.save_image(pred[itr].astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5 + itr))
+            valid_image = valid_images[itr].astype(np.uint8)
+            predone = pred[itr].astype(np.uint8)
+            img_rgb = utils.color_transform(predone, FLAGS.NUM_OF_CLASSES)
+            dst = utils.sobel(cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY))
+            edgedImage = utils.draw_edge(dst, valid_image)
+            utils.save_image(edgedImage.astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5 + itr))
             print("Saved image: %d" % itr)
 
     train_writer.close()
