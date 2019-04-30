@@ -286,7 +286,7 @@ def main(argv=None):
 
     if FLAGS.mode == "train":
         for itr in range(start, FLAGS.MAX_ITERATION):
-            train_images, train_annotations = train_dataset_reader.next_batch(FLAGS.batch_size)
+            train_images, train_annotations, _ = train_dataset_reader.next_batch(FLAGS.batch_size)
             print(np.shape(train_images), np.shape(train_annotations))
             feed_dict = {image: train_images, annotation: train_annotations, keep_probability: 0.85}
 
@@ -312,7 +312,7 @@ def main(argv=None):
                 train_writer.add_summary(summary_str, itr)
 
             if itr % 100 == 0:
-                valid_images, valid_annotations = validation_dataset_reader.next_batch(14)  # FLAGS.batch_size)
+                valid_images, valid_annotations, _ = validation_dataset_reader.next_batch(14)  # FLAGS.batch_size)
                 valid_loss, summary_sva = sess.run([model_loss, model_loss_summary],
                                                    feed_dict={image: valid_images, annotation: valid_annotations,
                                                               keep_probability: 1.0})
@@ -328,7 +328,8 @@ def main(argv=None):
                     # os.system('rm -f ./logs/best/*')
                     saver.save(sess, FLAGS.logs_dir + "best/" + "model.ckpt", itr)
     elif FLAGS.mode == "visualize":
-        valid_images, valid_annotations = validation_dataset_reader.get_random_batch(FLAGS.batch_size)
+        valid_images, valid_annotations, idx = validation_dataset_reader.next_batch(
+            FLAGS.batch_size)  # get_random_batch(FLAGS.batch_size)
 
         # testing for any size
         # valid_images = np.expand_dims(valid_images[0], axis=0)
@@ -344,11 +345,15 @@ def main(argv=None):
             # utils.save_image(valid_annotations[itr].astype(np.uint8), FLAGS.logs_dir, name="gt_" + str(5 + itr))
             # utils.save_image(pred[itr].astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5 + itr))
             valid_image = valid_images[itr].astype(np.uint8)
+            utils.save_image(valid_image, FLAGS.logs_dir, name="inp_" + idx[itr])
+
             predone = pred[itr].astype(np.uint8)
             img_rgb = utils.color_transform(predone, FLAGS.NUM_OF_CLASSES)
+            utils.save_image(img_rgb.astype(np.uint8), FLAGS.logs_dir, name="pred_color_" + idx[itr])
+
             dst = utils.sobel(cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY))
             edgedImage = utils.draw_edge(dst, valid_image)
-            utils.save_image(edgedImage.astype(np.uint8), FLAGS.logs_dir, name="pred_" + str(5 + itr))
+            utils.save_image(edgedImage.astype(np.uint8), FLAGS.logs_dir, name="pred_" + idx[itr])
             print("Saved image: %d" % itr)
 
     train_writer.close()

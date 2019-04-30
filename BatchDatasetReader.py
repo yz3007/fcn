@@ -14,6 +14,7 @@ import scipy.misc as misc
 # 批量读取数据集的类
 class BatchDatset:
     files = []
+    filenames = []
     images = []
     annotations = []
     image_options = {}
@@ -35,6 +36,7 @@ class BatchDatset:
         print("Initializing Batch Dataset Reader...")
         print(image_options)
         self.files = records_list
+        self.filenames = [info['filename'] for info in self.files]
         self.image_options = image_options
         self._read_images()
 
@@ -85,13 +87,15 @@ class BatchDatset:
             np.random.shuffle(perm)
             self.images = self.images[perm]
             self.annotations = self.annotations[perm]
+            self.filenames = self.filenames[perm]   # for later filename .png sets
             # Start next epoch
             start = 0
             self.batch_offset = batch_size
 
         end = self.batch_offset
-        return self.images[start:end], self.annotations[start:end]
+        return self.images[start:end], self.annotations[start:end], self.filenames[start:end] # edited
 
     def get_random_batch(self, batch_size):
-        indexes = np.random.randint(0, self.images.shape[0], size=[batch_size]).tolist()
+        indexes = np.random.randint(0, self.images.shape[0], size=[batch_size]).tolist()  # it generates repeated #
+        print indexes
         return self.images[indexes], self.annotations[indexes]
