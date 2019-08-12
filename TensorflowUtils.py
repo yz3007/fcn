@@ -109,7 +109,7 @@ def get_model_data(file_path):
 def save_image(image, save_dir, name, mean=None):  # ???????????????????????
 
     if mean:
-        iamge = unprocess_image(image, mean)
+        image = unprocess_image(image, mean)
     misc.imsave(os.path.join(save_dir, name + '.png'), image)
 
 
