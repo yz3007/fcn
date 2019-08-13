@@ -236,7 +236,7 @@ def bottleneck_unit(x, out_chan1, out_chan2, down_stride=False, up_stride=False,
         in_channel = out_shape[-1]
         kernel = weight_variable([shape, shape, out_channel, in_channel], name=name)
         shape[-1] = out_channel
-        return tf.nn.conv2d_tranpose(x, kernel, output_shape=out_shape,
+        return tf.nn.conv2d_transpose(x, kernel, output_shape=out_shape,
                                      strides=[1, strides, strides, 1],
                                      padding='SAME', name="conv_transpose")
 
